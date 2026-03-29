@@ -1,0 +1,14 @@
+{
+  "id": "nostr",
+  "name": "@xdamman/openclaw-nostr",
+  "version": "0.2.0",
+  "extensions": ["./dist/index.js"],
+  "configSchema": {},
+  "channel": {
+    "id": "nostr",
+    "label": "Nostr",
+    "selectionLabel": "Nostr (multi-account DMs)",
+    "blurb": "Decentralized DMs via Nostr relays",
+    "order": 55
+  }
+}
