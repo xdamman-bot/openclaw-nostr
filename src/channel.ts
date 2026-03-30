@@ -44,7 +44,7 @@ import {
 // ============================================================================
 
 let sharedBus: NostrMultiBusHandle | null = null;
-let sharedBusAccountCount = 0;
+let sharedBusCreating = false;
 
 // ============================================================================
 // Helpers
@@ -272,23 +272,31 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
         // If the shared bus already exists, this account is already covered.
         // The first account to start creates the bus for ALL accounts.
         if (sharedBus) {
-          sharedBusAccountCount++;
           ctx.log?.info(
-            `[${account.accountId}] Joined shared Nostr multi-bus (${sharedBusAccountCount} accounts)`,
+            `[${account.accountId}] Using shared Nostr multi-bus`,
           );
+          // Never close the shared bus from individual account lifecycle.
+          // The bus stays alive for the entire gateway lifetime.
           return {
             stop: () => {
-              sharedBusAccountCount--;
-              ctx.log?.info(`[${account.accountId}] Left shared Nostr multi-bus`);
-              if (sharedBusAccountCount <= 0 && sharedBus) {
-                sharedBus.close();
-                sharedBus = null;
-                sharedBusAccountCount = 0;
-                ctx.log?.info("Shared Nostr multi-bus closed");
-              }
+              ctx.log?.info(`[${account.accountId}] Nostr account stopped (bus stays alive)`);
             },
           };
         }
+
+        // Prevent race: if another startAccount is already creating the bus, wait
+        if (sharedBusCreating) {
+          await new Promise<void>((resolve) => {
+            const check = setInterval(() => {
+              if (sharedBus || !sharedBusCreating) { clearInterval(check); resolve(); }
+            }, 100);
+          });
+          if (sharedBus) {
+            ctx.log?.info(`[${account.accountId}] Using shared Nostr multi-bus (waited for creation)`);
+            return { stop: () => {} };
+          }
+        }
+        sharedBusCreating = true;
 
         // Collect ALL configured accounts and start ONE shared bus
         const allAccountIds = listNostrAccountIds(ctx.cfg);
@@ -318,6 +326,9 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
           `Starting shared Nostr multi-bus for ${allAccounts.length} account(s): ${allAccounts.map((a) => a.accountId).join(", ")}`,
         );
 
+        // Start the bus — it's resilient and won't throw on relay failures.
+        // Individual relay reconnects are handled internally with exponential backoff.
+
         // Build per-account pairing controllers and access resolvers
         const pairingControllers = new Map<string, ReturnType<typeof createChannelPairingController>>();
         for (const acc of allAccounts) {
@@ -331,58 +342,31 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
           );
         }
 
-        const bus = await startNostrMultiBus({
+        let bus: NostrMultiBusHandle;
+        try {
+        bus = await startNostrMultiBus({
           accounts: allAccounts,
-          authorizeSender: async ({ accountId, senderPubkey, reply }) => {
+          authorizeInbound: async (accountId: string, senderPubkey: string) => {
             const resolved = resolveNostrAccount({ cfg: ctx.cfg, accountId });
-            const resolvedAccess = await resolveNostrDirectAccess({
-              cfg: ctx.cfg,
-              accountId,
-              dmPolicy: resolved.config.dmPolicy ?? "pairing",
-              allowFrom: resolved.config.allowFrom,
-              senderPubkey,
-              rawBody: "",
-              runtime: {
-                shouldComputeCommandAuthorized:
-                  runtime.channel.commands.shouldComputeCommandAuthorized,
-                resolveCommandAuthorizedFromAuthorizers:
-                  runtime.channel.commands.resolveCommandAuthorizedFromAuthorizers,
-              },
-            });
-
-            const authorizer = createPreCryptoDirectDmAuthorizer({
-              resolveAccess: async () => resolvedAccess,
-              issuePairingChallenge: async ({ senderId, reply: pairingReply }) => {
-                const pairing = pairingControllers.get(accountId);
-                if (pairing) {
-                  await pairing.issueChallenge({
-                    senderId,
-                    senderIdLine: `Your Nostr pubkey: ${senderId}`,
-                    sendPairingReply: pairingReply,
-                    onCreated: () => {
-                      ctx.log?.debug?.(
-                        `[${accountId}] nostr pairing request sender=${senderId}`,
-                      );
-                    },
-                    onReplyError: (err) => {
-                      ctx.log?.warn?.(
-                        `[${accountId}] nostr pairing reply failed for ${senderId}: ${String(err)}`,
-                      );
-                    },
-                  });
-                }
-              },
-              onBlocked: ({ senderId, reason }) => {
-                ctx.log?.debug?.(
-                  `[${accountId}] blocked Nostr sender ${senderId} (${reason})`,
-                );
-              },
-            });
-
-            return authorizer({ senderId: senderPubkey, reply });
+            const policy = resolved.config.dmPolicy ?? "allowlist";
+            if (policy === "disabled") return false;
+            if (policy === "open") return true;
+            // allowlist or pairing: check allowFrom
+            const allowFrom = resolved.config.allowFrom ?? [];
+            if (!allowFrom.length) return policy === "pairing"; // pairing allows through
+            try {
+              return isNostrSenderAllowed(senderPubkey, allowFrom as string[]);
+            } catch {
+              return false;
+            }
           },
           onMessage: async (accountId, senderPubkey, plaintext, reply, meta) => {
             const resolved = resolveNostrAccount({ cfg: ctx.cfg, accountId });
+
+            // Send typing indicator immediately so the sender knows we're processing
+            bus.sendTypingIndicator(accountId, senderPubkey).catch((err) => {
+              ctx.log?.debug?.(`[${accountId}] typing indicator failed: ${String(err)}`);
+            });
 
             // Double-check access after decryption
             const resolvedAccess = await resolveNostrDirectAccess({
@@ -455,33 +439,34 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
           onError: (error, context) => {
             ctx.log?.error?.(`Nostr multi-bus error (${context}): ${error.message}`);
           },
-          onConnect: (relay) => {
+          onConnect: (relay: string) => {
             ctx.log?.debug?.(`Connected to relay: ${relay}`);
           },
-          onDisconnect: (relay) => {
+          onDisconnect: (relay: string) => {
             ctx.log?.debug?.(`Disconnected from relay: ${relay}`);
-          },
-          onEose: (relay) => {
-            ctx.log?.debug?.(`EOSE received from relays: ${relay}`);
           },
         });
 
+        } catch (busErr) {
+          sharedBusCreating = false;
+          ctx.log?.error?.(
+            `Failed to create Nostr multi-bus: ${String(busErr)}. Will retry on next account start.`,
+          );
+          // Return a no-op stop — don't throw, so OpenClaw doesn't crash-loop
+          return { stop: () => {} };
+        }
+
         sharedBus = bus;
-        sharedBusAccountCount = 1;
+        sharedBusCreating = false;
 
         ctx.log?.info(
           `Shared Nostr multi-bus started, listening on ${allAccounts.length} pubkeys across ${new Set(allAccounts.flatMap((a) => a.relays)).size} relay(s)`,
         );
 
+        // The bus creator's stop is also a no-op — bus stays alive for gateway lifetime
         return {
           stop: () => {
-            sharedBusAccountCount--;
-            if (sharedBusAccountCount <= 0 && sharedBus) {
-              sharedBus.close();
-              sharedBus = null;
-              sharedBusAccountCount = 0;
-              ctx.log?.info("Shared Nostr multi-bus closed");
-            }
+            ctx.log?.info(`[${account.accountId}] Nostr account stopped (bus stays alive)`);
           },
         };
       },

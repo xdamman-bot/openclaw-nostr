@@ -1,14 +1,95 @@
 {
   "id": "nostr",
+  "kind": "channel",
+  "channels": ["nostr"],
   "name": "@xdamman/openclaw-nostr",
-  "version": "0.2.0",
-  "extensions": ["./dist/index.js"],
-  "configSchema": {},
-  "channel": {
-    "id": "nostr",
-    "label": "Nostr",
-    "selectionLabel": "Nostr (multi-account DMs)",
-    "blurb": "Decentralized DMs via Nostr relays",
-    "order": 55
+  "description": "Nostr DM channel plugin via NIP-04 with multi-account support",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "name": { "type": "string" },
+      "defaultAccount": { "type": "string" },
+      "privateKey": { "type": "string" },
+      "relays": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "dmPolicy": {
+        "type": "string",
+        "enum": ["open", "allowlist", "pairing", "disabled"]
+      },
+      "allowFrom": {
+        "type": "array",
+        "items": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" }
+          ]
+        }
+      },
+      "profile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "displayName": { "type": "string" },
+          "about": { "type": "string" },
+          "picture": { "type": "string" },
+          "banner": { "type": "string" },
+          "website": { "type": "string" },
+          "nip05": { "type": "string" },
+          "lud16": { "type": "string" }
+        }
+      },
+      "markdown": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "accounts": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "name": { "type": "string" },
+            "privateKey": { "type": "string" },
+            "relays": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "dmPolicy": {
+              "type": "string",
+              "enum": ["open", "allowlist", "pairing", "disabled"]
+            },
+            "allowFrom": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "number" }
+                ]
+              }
+            },
+            "profile": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "displayName": { "type": "string" },
+                "about": { "type": "string" },
+                "picture": { "type": "string" },
+                "banner": { "type": "string" },
+                "website": { "type": "string" },
+                "nip05": { "type": "string" },
+                "lud16": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
