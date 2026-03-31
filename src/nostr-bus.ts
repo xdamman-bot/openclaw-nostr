@@ -47,6 +47,8 @@ export interface NostrMultiBusHandle {
   publicKeys: string[];
   sendDm: (accountId: string, toPubkey: string, text: string) => Promise<void>;
   sendTypingIndicator: (accountId: string, toPubkey: string) => Promise<void>;
+  startTypingLoop: (accountId: string, toPubkey: string) => void;
+  stopTypingLoop: (accountId: string, toPubkey: string) => void;
 }
 
 export function validatePrivateKey(key: string): Uint8Array {
@@ -223,13 +225,15 @@ export async function startNostrMultiBus(
     await Promise.allSettled(promises);
   }
 
-  // Send ephemeral typing indicator (kind 10003) from a specific account
+  // Send ephemeral typing indicator (kind 20003) from a specific account.
+  // Kind 20003 is in the ephemeral range (20000-29999) per NIP-01 —
+  // relays MUST NOT store it, only forward to connected subscribers.
   async function sendTypingIndicator(accountId: string, toPubkey: string) {
     const account = accountById.get(accountId);
     if (!account) return; // silently skip if account not found
     const event = finalizeEvent(
       {
-        kind: 10003,
+        kind: 20003,
         created_at: Math.floor(Date.now() / 1000),
         tags: [["p", toPubkey]],
         content: "",
@@ -239,6 +243,38 @@ export async function startNostrMultiBus(
     // Fire-and-forget to all connected relays
     const promises = activeRelays.map((r) => r.publish(event).catch(() => {}));
     await Promise.allSettled(promises);
+  }
+
+  // Typing loop state: one loop per (accountId, toPubkey) pair
+  const typingLoops = new Map<string, NodeJS.Timeout>();
+
+  function typingLoopKey(accountId: string, toPubkey: string) {
+    return `${accountId}:${toPubkey}`;
+  }
+
+  // Start sending typing indicators every 5s until stopTypingLoop is called.
+  // Sends one immediately, then repeats every 5s.
+  function startTypingLoop(accountId: string, toPubkey: string) {
+    const key = typingLoopKey(accountId, toPubkey);
+    // If already running, don't duplicate
+    if (typingLoops.has(key)) return;
+    // Send immediately
+    sendTypingIndicator(accountId, toPubkey).catch(() => {});
+    // Then every 5s
+    const interval = setInterval(() => {
+      sendTypingIndicator(accountId, toPubkey).catch(() => {});
+    }, 5_000);
+    typingLoops.set(key, interval);
+  }
+
+  // Stop the typing loop for a given conversation.
+  function stopTypingLoop(accountId: string, toPubkey: string) {
+    const key = typingLoopKey(accountId, toPubkey);
+    const interval = typingLoops.get(key);
+    if (interval) {
+      clearInterval(interval);
+      typingLoops.delete(key);
+    }
   }
 
   // Connect to all relays — failures are handled by scheduleReconnect,
@@ -262,5 +298,7 @@ export async function startNostrMultiBus(
     publicKeys: allPubkeys,
     sendDm,
     sendTypingIndicator,
+    startTypingLoop,
+    stopTypingLoop,
   };
 }

@@ -363,10 +363,8 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
           onMessage: async (accountId, senderPubkey, plaintext, reply, meta) => {
             const resolved = resolveNostrAccount({ cfg: ctx.cfg, accountId });
 
-            // Send typing indicator immediately so the sender knows we're processing
-            bus.sendTypingIndicator(accountId, senderPubkey).catch((err) => {
-              ctx.log?.debug?.(`[${accountId}] typing indicator failed: ${String(err)}`);
-            });
+            // Start sending typing indicators every 5s while we're processing
+            bus.startTypingLoop(accountId, senderPubkey);
 
             // Double-check access after decryption
             const resolvedAccess = await resolveNostrDirectAccess({
@@ -410,6 +408,9 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
               timestamp: meta.createdAt * 1000,
               commandAuthorized: resolvedAccess.commandAuthorized,
               deliver: async (payload) => {
+                // Stop typing indicators before sending the reply
+                bus.stopTypingLoop(accountId, senderPubkey);
+
                 const outboundText =
                   payload && typeof payload === "object" && "text" in payload
                     ? String((payload as { text?: string }).text ?? "")
@@ -425,11 +426,13 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
                 );
               },
               onRecordError: (err) => {
+                bus.stopTypingLoop(accountId, senderPubkey);
                 ctx.log?.error?.(
                   `[${accountId}] failed recording Nostr inbound session: ${String(err)}`,
                 );
               },
               onDispatchError: (err, info) => {
+                bus.stopTypingLoop(accountId, senderPubkey);
                 ctx.log?.error?.(
                   `[${accountId}] Nostr ${info.kind} reply failed: ${String(err)}`,
                 );
