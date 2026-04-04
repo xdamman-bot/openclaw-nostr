@@ -117,14 +117,15 @@ export async function startNostrMultiBus(
       for (const id of arr.slice(-SEEN_PRUNE_KEEP)) seen.add(id);
     }
 
-    // Skip our own messages
-    if (allPubkeys.includes(event.pubkey)) return;
-
     // Find recipient account
     const recipientPubkey = event.tags.find((t) => t[0] === "p")?.[1];
     if (!recipientPubkey) return;
     const account = accountByPubkey.get(recipientPubkey);
     if (!account) return;
+
+    // Skip self-messages (same account sending to itself), but allow
+    // inter-agent DMs (agent A sending to agent B on the same bus)
+    if (event.pubkey === recipientPubkey) return;
 
     // Authorize
     if (options.authorizeInbound) {

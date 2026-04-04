@@ -1,31 +1,52 @@
 {
-  "id": "nostr",
+  "id": "nostr-v2",
   "kind": "channel",
-  "channels": ["nostr"],
+  "channels": [
+    "nostr"
+  ],
   "name": "@xdamman/openclaw-nostr",
   "description": "Nostr DM channel plugin via NIP-04 with multi-account support",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "enabled": { "type": "boolean" },
-      "name": { "type": "string" },
-      "defaultAccount": { "type": "string" },
-      "privateKey": { "type": "string" },
+      "enabled": {
+        "type": "boolean"
+      },
+      "name": {
+        "type": "string"
+      },
+      "defaultAccount": {
+        "type": "string"
+      },
+      "privateKey": {
+        "type": "string"
+      },
       "relays": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
       "dmPolicy": {
         "type": "string",
-        "enum": ["open", "allowlist", "pairing", "disabled"]
+        "enum": [
+          "open",
+          "allowlist",
+          "pairing",
+          "disabled"
+        ]
       },
       "allowFrom": {
         "type": "array",
         "items": {
           "oneOf": [
-            { "type": "string" },
-            { "type": "number" }
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
           ]
         }
       },
@@ -33,14 +54,30 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string" },
-          "displayName": { "type": "string" },
-          "about": { "type": "string" },
-          "picture": { "type": "string" },
-          "banner": { "type": "string" },
-          "website": { "type": "string" },
-          "nip05": { "type": "string" },
-          "lud16": { "type": "string" }
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "about": {
+            "type": "string"
+          },
+          "picture": {
+            "type": "string"
+          },
+          "banner": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "nip05": {
+            "type": "string"
+          },
+          "lud16": {
+            "type": "string"
+          }
         }
       },
       "markdown": {
@@ -53,23 +90,40 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean" },
-            "name": { "type": "string" },
-            "privateKey": { "type": "string" },
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "privateKey": {
+              "type": "string"
+            },
             "relays": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "type": "string"
+              }
             },
             "dmPolicy": {
               "type": "string",
-              "enum": ["open", "allowlist", "pairing", "disabled"]
+              "enum": [
+                "open",
+                "allowlist",
+                "pairing",
+                "disabled"
+              ]
             },
             "allowFrom": {
               "type": "array",
               "items": {
                 "oneOf": [
-                  { "type": "string" },
-                  { "type": "number" }
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
                 ]
               }
             },
@@ -77,14 +131,30 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "name": { "type": "string" },
-                "displayName": { "type": "string" },
-                "about": { "type": "string" },
-                "picture": { "type": "string" },
-                "banner": { "type": "string" },
-                "website": { "type": "string" },
-                "nip05": { "type": "string" },
-                "lud16": { "type": "string" }
+                "name": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "about": {
+                  "type": "string"
+                },
+                "picture": {
+                  "type": "string"
+                },
+                "banner": {
+                  "type": "string"
+                },
+                "website": {
+                  "type": "string"
+                },
+                "nip05": {
+                  "type": "string"
+                },
+                "lud16": {
+                  "type": "string"
+                }
               }
             }
           }
