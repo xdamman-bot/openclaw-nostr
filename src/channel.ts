@@ -275,13 +275,21 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
           ctx.log?.info(
             `[${account.accountId}] Using shared Nostr multi-bus`,
           );
-          // Never close the shared bus from individual account lifecycle.
-          // The bus stays alive for the entire gateway lifetime.
-          return {
-            stop: () => {
+          // Return a Promise that stays pending — OpenClaw treats a resolved
+          // startAccount as "account exited" and triggers auto-restart.
+          // We only resolve when stop() is called or abortSignal fires.
+          return new Promise<{ stop: () => void }>((resolve) => {
+            const stop = () => {
               ctx.log?.info(`[${account.accountId}] Nostr account stopped (bus stays alive)`);
-            },
-          };
+              resolve({ stop });
+            };
+            // Also resolve if OpenClaw sends abort signal
+            if (ctx.abortSignal) {
+              ctx.abortSignal.addEventListener('abort', () => resolve({ stop }), { once: true });
+            }
+            // Return stop handle immediately via the resolve callback pattern
+            // But the promise itself stays pending until stop/abort
+          });
         }
 
         // Prevent race: if another startAccount is already creating the bus, wait
@@ -293,7 +301,12 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
           });
           if (sharedBus) {
             ctx.log?.info(`[${account.accountId}] Using shared Nostr multi-bus (waited for creation)`);
-            return { stop: () => {} };
+            return new Promise<{ stop: () => void }>((resolve) => {
+              const stop = () => resolve({ stop });
+              if (ctx.abortSignal) {
+                ctx.abortSignal.addEventListener('abort', () => resolve({ stop }), { once: true });
+              }
+            });
           }
         }
         sharedBusCreating = true;
@@ -455,8 +468,8 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
           ctx.log?.error?.(
             `Failed to create Nostr multi-bus: ${String(busErr)}. Will retry on next account start.`,
           );
-          // Return a no-op stop — don't throw, so OpenClaw doesn't crash-loop
-          return { stop: () => {} };
+          // Throw so OpenClaw can properly retry
+          throw busErr;
         }
 
         sharedBus = bus;
@@ -466,12 +479,17 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = createChatChanne
           `Shared Nostr multi-bus started, listening on ${allAccounts.length} pubkeys across ${new Set(allAccounts.flatMap((a) => a.relays)).size} relay(s)`,
         );
 
-        // The bus creator's stop is also a no-op — bus stays alive for gateway lifetime
-        return {
-          stop: () => {
-            ctx.log?.info(`[${account.accountId}] Nostr account stopped (bus stays alive)`);
-          },
-        };
+        // The bus creator also returns a never-resolving Promise —
+        // same pattern as secondary accounts to avoid auto-restart.
+        return new Promise<{ stop: () => void }>((resolve) => {
+          const stop = () => {
+            ctx.log?.info(`[${account.accountId}] Nostr account stopped (bus creator, bus stays alive)`);
+            resolve({ stop });
+          };
+          if (ctx.abortSignal) {
+            ctx.abortSignal.addEventListener('abort', () => resolve({ stop }), { once: true });
+          }
+        });
       },
     },
   },
