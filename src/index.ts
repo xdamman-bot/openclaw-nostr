@@ -8,7 +8,7 @@ export { nostrPlugin } from "./channel.js";
 export { setNostrRuntime } from "./runtime.js";
 
 export default defineChannelPluginEntry({
-  id: "nostr-v2",
+  id: "nostrx",
   name: "Nostr",
   description: "Nostr DM channel plugin via NIP-04 with multi-account support",
   plugin: nostrPlugin,

@@ -109,7 +109,8 @@ export async function startNostrMultiBus(
   const reconnectAttempts = new Map<string, number>();
 
   async function handleEvent(event: Event) {
-    if (seen.has(event.id)) return;
+    log.info(`[nostr-bus] handleEvent kind=${event.kind} from=${event.pubkey.slice(0,8)} id=${event.id.slice(0,8)}`);
+    if (seen.has(event.id)) { log.info(`[nostr-bus] skipping seen event ${event.id.slice(0,8)}`); return; }
     seen.add(event.id);
     if (seen.size > SEEN_MAX_SIZE) {
       const arr = [...seen];
@@ -119,18 +120,20 @@ export async function startNostrMultiBus(
 
     // Find recipient account
     const recipientPubkey = event.tags.find((t) => t[0] === "p")?.[1];
-    if (!recipientPubkey) return;
+    if (!recipientPubkey) { log.info(`[nostr-bus] no p-tag, skipping`); return; }
     const account = accountByPubkey.get(recipientPubkey);
-    if (!account) return;
+    if (!account) { log.info(`[nostr-bus] recipient ${recipientPubkey.slice(0,8)} not our account, skipping`); return; }
+
+    log.info(`[nostr-bus] DM for account=${account.accountId} from=${event.pubkey.slice(0,8)}`);
 
     // Skip self-messages (same account sending to itself), but allow
     // inter-agent DMs (agent A sending to agent B on the same bus)
-    if (event.pubkey === recipientPubkey) return;
+    if (event.pubkey === recipientPubkey) { log.info(`[nostr-bus] self-message, skipping`); return; }
 
     // Authorize
     if (options.authorizeInbound) {
       const result = await options.authorizeInbound(account.accountId, event.pubkey); const allowed = result === true || result === "allow";
-      if (!allowed) return;
+      if (!allowed) { log.info(`[nostr-bus] unauthorized sender=${event.pubkey.slice(0,8)} for account=${account.accountId}`); return; }
     }
 
     // Decrypt
